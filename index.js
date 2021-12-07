@@ -9,7 +9,9 @@ const http = require('http');
 const server = http.createServer(app);
 const { Server } = require('socket.io');
 const Jimp = require('jimp');
-const io = new Server(server);
+const io = new Server(server, {
+  maxHttpBufferSize: 4e6,
+});
 
 app.get('/', (req, res) => {
   res.sendFile(__dirname + '/index.html');
@@ -17,7 +19,7 @@ app.get('/', (req, res) => {
 
 server.listen(15777);
 
-const pngMagic = new Uint8Array([ 137, 80, 78, 71, 13, 10, 26, 10 ]);
+const pngMagic = new Uint8Array([ 0xFF, 0xD8 ]);
 let buffer = Buffer.from('');
 let superMegaCache = null;
 let currentWindow = null;
@@ -115,7 +117,7 @@ process.stdin.on('data', data => {
   if (index >= 0 && buffer.indexOf(pngMagic, index + 1) >= 0) {
     const chunk = buffer.slice(0, buffer.indexOf(pngMagic, index + 1));
     const image = chunk.slice(chunk.indexOf(pngMagic));
-    const hash = crypto.createHash('sha1').update(image).digest('hex');
+    const hash = image.length;
 
     buffer = Buffer.from('');
 
