@@ -1,55 +1,252 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <style>
-        .content {
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+
+    <title>iWireless iScreen iMode</title>
+
+    <style id="main-style">
+        body, html { position: fixed; width: 100vw; height: 100vh; }
+
+        .hidden {
+            height: 0 !important;
+            opacity: 0;
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        html, body {
+            overscroll-behavior-y: none;
+        }
+
+        body {
+            touch-action: pan-x pan-y;
+            background: #fff;
+        }
+
+        .start {
+            z-index: 999;
+            width: 100vw;
+            height: 100vh;
+            top: 0;
+            left:  0;
+            position: fixed;
+            background: #444;
             display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .start::after {
+            content: 'Start';
+            letter-spacing: .02em;
+            font-size: 46px;
+            font-family: monospace;
+            color: white;
+        }
+
+        .content {
+            z-index: 999;
+            width: 100vw;
+            height: 100vh;
+            position: relative;
             flex-direction: row;
-            height: 700px;
-            margin-left: 30px;
+            overflow: hidden;
+            display: none;
+        }
+
+        #new, #maximize {
+            position: absolute;
+            left: 12px;
+            top: 72px;
+            width: 56px;
+            height: 56px;
+            background: #6a0;
+            border:  1px solid #ccc;
+            border-radius: 16px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        #new::after, #maximize::after {
+            content: '...';
+            color: white;
+            font-size: 20px;
+            letter-spacing: 0;
+            font-family: monospace;
+            position: absolute;
+            left: 0;
+            right: 0;
+            text-align: center;
+            top: 36px;
+            transform: translateY(-26px);
+        }
+
+        #maximize {
+            background: #309;
+            top: 12px;
+            font-family: cursive;
+        }
+
+        #maximize::after {
+            font-size: 24px;
+            content: "↑";
+        }
+
+        #maximize.active::after {
+            font-size: 24px;
+            content: "↓";
         }
 
         #panel {
             display: inline-flex;
             flex-direction: column;
-            justify-content: center;
+            justify-content: flex-end;
             align-items: center;
-            margin-right: 10px;
-            padding: 10px;
+            margin-right: 6px;
+            padding: 14px;
+            border-radius: 8px;
+            overflow: hidden;
+            overflow-y: auto;
         }
 
         .window-icon {
-            display: block;
-            width: 48px;
-            height: 48px;
-            padding: 12px 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             transform: scaleX(-1) rotate(90deg);
+            border: 1px solid transparent;
+            padding: 10px;
+            cursor: pointer;
+            background: #e4e4e4;
+            width: 72px;
+            height: 72px;
+            border-top: 1px solid #bcbcbc;
+            border-bottom: 1px solid #bcbcbc;
+        }
+
+        .window-icon::after {
+            content: ' ';
+            position: absolute;
+            bottom: -20px;
+            height: 30px;
+            right: -1px;
+            left: -1px;
+            background: #e4e4e4;
+        }
+
+        .window-icon:first-child::after {
+            border-left: 1px solid #bbb;
+        }
+
+        .window-icon:last-child::after {
+            border-right: 1px solid #bbb;
+        }
+
+        .window-icon:first-child {
+            border-radius: 12px 0 0 12px;
+            border-left: 1px solid #bcbcbc;
+        }
+
+        .window-icon:last-child {
+            border-radius: 0 12px 12px 0;
+            border-right: 1px solid #bcbcbc;
+        }
+
+        .window-icon > img {
+            max-width: 80%;
+            max-height: 80%;
+            min-width: 36px;
+            min-height: 36px;
+        }
+
+        .window-icon.active {
+            background: #ccc;
+        }
+
+        .window-icon.active::after {
+            background: #ccc;
         }
 
         #root {
-            display: inline-flex;
-            width: 1000px;
-            height: 700px;
-            align-items: center;
-            justify-content: center;
+            background: #fff;
+            z-index: 998;
+            width: 1102px;
+            height: 784px;
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            border-radius: 12px 12px 12px 0;
+            border: 1px solid #bbb;
+            overflow: hidden;
         }
 
-        #root > img {
-            border: 1px solid gray;
+        #root > .title {
+            width: 100%;
+            height: 48px;
+            background: #ccc;
+            overflow: hidden;
+            transition: all .3s ease-out;
+        }
+
+        #root > .title > .icon {
+            transform: scaleX(-1) rotate(90deg);
+            margin: 12px 12px 12px 16px;
+            width: 24px;
+            height: 24px;
+        }
+
+        #root > .title > .text {
+            position: absolute;
+            left: 32px;
+            top: 0;
+            color: #222;
+            padding: 9px 9px 9px 24px;
+            font-size: 24px;
+            font-family: GillSans;
+        }
+
+        #root > .title > .buttons {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+        }
+
+        #root > .title .button {
+            width: 24px;
+            height: 24px;
+            border-radius: 24px;
+            background: #c40;
+        }
+
+        #img {
             flex: 0 1 auto;
-            max-width: 1000px;
-            max-height: 700px;
+            transition: margin-top .3s ease-out;
+            height: 735px;
+            width: 1100px;
+        }
+
+        #root.maximized #img {
+            height: 783px;
+            width: 1100px;
         }
     </style>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta charset="UTF-8">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <title>MegaSoft</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.0.4/pako.min.js"></script>
+
     <script src="https://cdn.socket.io/4.3.2/socket.io.min.js" integrity="sha384-KAZ4DtjNhLChOB/hxXuKqhMLYvx3b5MlT55xPEiNmREKRzeEm+RVPlTnAn0ajQNs" crossorigin="anonymous"></script>
+    <script src="/lib/client/index.js"></script>
+
     <script>
         const socket = io();
         let lastTimestamp = Date.now();
+
+        window.socket = socket;
 
         socket.on('windows', (data) => {
             const panel = document.querySelector('#panel');
@@ -57,15 +254,25 @@
 
             const { windows } = JSON.parse(data);
             Object.keys(windows).forEach(x11Window => {
-                const icon = new Image();
-                icon.src = `data:image/png;base64,${windows[x11Window].iconData}`;
-                icon.classList.add('window-icon');
+                const currentWindow = windows[x11Window];
+                const item = document.createElement('div');
+                item.classList.add('window-icon');
 
-                icon.addEventListener('click', () => {
+                const icon = new Image();
+                icon.src = `data:image/png;base64,${currentWindow.iconData}`;
+
+                item.addEventListener('click', () => {
                    socket.emit('activate', JSON.stringify(x11Window));
+
+                   Array.from(document.querySelectorAll('.window-icon')).forEach(it => it.classList.remove('active'));
+
+                   item.classList.add('active');
+                   document.querySelector('#root > .title > .icon').src = icon.src;
+                   document.querySelector('#root > .title > .text').innerText = currentWindow.title;
                 });
 
-                panel.appendChild(icon);
+                item.appendChild(icon);
+                panel.appendChild(item);
             });
         });
 
@@ -75,47 +282,153 @@
             if (timestamp < lastTimestamp)
                 return;
 
-            const image = pako.inflateRaw(new Uint8Array(atob(JSON.parse(data).i).split('').map(it => it.charCodeAt(0))));
+            const blob = new Blob( [ data ], { type: "image/jpeg" } );
+            const urlCreator = window.URL || window.webkitURL;
 
-            document.querySelector('#img').src = `data:image/png;base64,${encode(image)}`;
+            document.querySelector('#img').src = urlCreator.createObjectURL(blob);
             lastTimestamp = timestamp;
         });
 
-        function encode (input) {
-            let keyStr = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
-            let output = "";
-            let chr1, chr2, chr3, enc1, enc2, enc3, enc4;
-            let i = 0;
+        socket.on('style', (data) => {
+            const { style } = JSON.parse(data);
 
-            while (i < input.length) {
-                chr1 = input[i++];
-                chr2 = i < input.length ? input[i++] : Number.NaN; // Not sure if the index
-                chr3 = i < input.length ? input[i++] : Number.NaN; // checks are needed here
+            document.querySelector('#main-style').innerHTML = style;
+        });
 
-                enc1 = chr1 >> 2;
-                enc2 = ((chr1 & 3) << 4) | (chr2 >> 4);
-                enc3 = ((chr2 & 15) << 2) | (chr3 >> 6);
-                enc4 = chr3 & 63;
-
-                if (isNaN(chr2)) {
-                    enc3 = enc4 = 64;
-                } else if (isNaN(chr3)) {
-                    enc4 = 64;
-                }
-                output += keyStr.charAt(enc1) + keyStr.charAt(enc2) +
-                    keyStr.charAt(enc3) + keyStr.charAt(enc4);
-            }
-            return output;
-        }
+        window.addEventListener('error', (error) => {
+            socket.emit('warning', JSON.stringify({ error }));
+        });
     </script>
 </head>
+
 <body>
-    <div class="content">
+    <div class="start"></div>
+
+    <div class="content" tabindex="0">
+        <div id="maximize"></div>
+        <div id="new"></div>
         <div id="panel"></div>
 
         <div id="root">
-            <img id="img" src="" />
+            <div class="title">
+                <img class="icon" />
+
+                <div class="text">Untitled window</div>
+
+                <div class="buttons">
+                    <div class="button" id="close-button"></div>
+                </div>
+            </div>
+
+            <video autoplay id="img" />
         </div>
     </div>
+    <script type="text/javascript">
+        const img = document.querySelector('#img');
+
+        (() => {
+            async function beforeAnswer(peerConnection) {
+                img.srcObject = new MediaStream(peerConnection.getReceivers().map(receiver => receiver.track));
+
+                const { close } = peerConnection;
+                peerConnection.close = function() {
+                    img.srcObject = null;
+
+                    return close.apply(this, arguments);
+                };
+            }
+
+            const connectionClient = new ConnectionClient();
+            connectionClient.createConnection({ beforeAnswer }).then((peerConnection) => {
+                window.peerConnection = peerConnection;
+            });
+        })();
+
+        const getLocalXY = (eventX, eventY) => {
+            const { x, y } = img.getBoundingClientRect();
+
+            return [ eventX - x, eventY - y ];
+        };
+
+        const root = document.querySelector('#root');
+        const mainButton = document.querySelector('.start');
+        const maximizeButton = document.querySelector('#maximize');
+        const titleBar = document.querySelector('#root > .title');
+        let maximized = false;
+
+        mainButton.addEventListener('click', () => {
+            mainButton.style.display = 'none';
+            document.querySelector('.content').style.display = 'flex';
+            // img.requestFullscreen();
+            img.play();
+        });
+
+        maximizeButton.addEventListener('click', () => {
+            maximized = !maximized;
+
+            if (maximized) {
+                maximizeButton.classList.add('active');
+                titleBar.classList.add('hidden');
+                root.classList.add('maximized');
+
+                window.socket.emit('maximize');
+            } else {
+                maximizeButton.classList.remove('active');
+                titleBar.classList.remove('hidden');
+                root.classList.remove('maximized');
+
+                window.socket.emit('unmaximize');
+            }
+        });
+
+        let prevX = null, prevY = null;
+        let xMovement = 0, yMovement = 0;
+
+        img.addEventListener('touchmove', e => {
+            if (!e.touches || !e.touches[0])
+                return;
+
+            const touch = e.touches[0];
+            const [ touchX, touchY ] = getLocalXY(touch.pageX, touch.pageY);
+
+            if (prevX && prevY) {
+                let scrollThreshold = 15;
+
+                if (touch.altitudeAngle) {
+                    if (touch.altitudeAngle < 1) {
+                        scrollThreshold = Math.max(6, scrollThreshold * touch.altitudeAngle);
+                    }
+                }
+
+                if (touchY - prevY > scrollThreshold) {
+                    window.socket.emit('scrollUp');
+                    prevY = touchY;
+                }
+
+                if (touchY - prevY < -scrollThreshold) {
+                    window.socket.emit('scrollDown');
+                    prevY = touchY;
+                }
+            } else {
+                prevX = touchX;
+                prevY = touchY;
+            }
+        });
+
+        img.addEventListener('touchend', () => {
+            prevX = null;
+            prevY = null;
+
+            xMovement = 0;
+            yMovement = 0;
+        });
+
+        img.addEventListener('click', e => {
+            const [ x, y ] = getLocalXY(e.clientX, e.clientY);
+
+            window.socket.emit('click', JSON.stringify({ x, y }));
+        })
+    </script>
 </body>
+
 </html>

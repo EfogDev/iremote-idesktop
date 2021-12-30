@@ -1,31 +1,35 @@
+#include <stdint.h>
 #include <stdio.h>
+#include <errno.h>
 #include <stdlib.h>
+#include <signal.h>
+#include <math.h>
 #include <stdbool.h>
 #include <sys/shm.h>
-#include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/extensions/XShm.h>
-#include <cairo.h>
-#include <cairo-xlib.h>
-#include <signal.h>
+#include <sys/time.h>
+#include <turbojpeg.h>
 #include <unistd.h>
 
+#define FRAME  60000
+#define PERIOD 900000
 #define BPP    4
 
-int current_frame = 0;
-Window temp_window_id = 0;
-Window active_window;
-Display* dsp = NULL;
-struct shmimage _src;
-struct shmimage* src;
+Display* dsp;
+volatile Window active_window;
+volatile Window temp_window_id;
 
 struct shmimage
 {
     XShmSegmentInfo shminfo;
     XImage * ximage;
-    unsigned int * data;
+    unsigned int * data; // BGRA
 };
+
+struct shmimage _src;
+struct shmimage * src = &_src;
 
 void initimage(struct shmimage * image)
 {
@@ -51,12 +55,14 @@ void destroyimage(struct shmimage * image)
 
 int createimage(struct shmimage * image, int width, int height)
 {
+    // Create a shared memory area
     image->shminfo.shmid = shmget(IPC_PRIVATE, width * height * BPP, IPC_CREAT | 0600);
     if (image->shminfo.shmid == -1)
     {
         return false;
     }
 
+    // Map the shared memory segment into the address space of this process
     image->shminfo.shmaddr = (char *) shmat(image->shminfo.shmid, 0, 0);
     if (image->shminfo.shmaddr == (char *) -1)
     {
@@ -66,12 +72,14 @@ int createimage(struct shmimage * image, int width, int height)
     image->data = (unsigned int*) image->shminfo.shmaddr;
     image->shminfo.readOnly = false;
 
+    // Mark the shared memory segment for removal
+    // It will be removed even if this program crashes
     shmctl(image->shminfo.shmid, IPC_RMID, 0);
 
+    // Allocate the memory needed for the XImage structure
     image->ximage = XShmCreateImage(dsp, XDefaultVisual(dsp, XDefaultScreen(dsp)),
                         DefaultDepth(dsp, XDefaultScreen(dsp)), ZPixmap, 0,
                         &image->shminfo, 0, 0);
-
     if (!image->ximage)
     {
         destroyimage(image);
@@ -82,29 +90,32 @@ int createimage(struct shmimage * image, int width, int height)
     image->ximage->width = width;
     image->ximage->height = height;
 
+    // Ask the X server to attach the shared memory segment and sync
     XShmAttach(dsp, &image->shminfo);
     XSync(dsp, false);
     return true;
 }
 
-static cairo_status_t buffer_write(void* metadata, const unsigned char *data, unsigned int length)
+void getrootwindow()
 {
-    return fwrite((char*) data, 1, length, stdout) ? CAIRO_STATUS_SUCCESS : CAIRO_STATUS_WRITE_ERROR;
+    XShmGetImage(dsp, active_window, src->ximage, 0, 0, AllPlanes);
 }
 
-int processimage()
+long timestamp()
 {
-    int w = src->ximage->width, h = src->ximage->height, x = 0, y = 0;
-
-    cairo_surface_t* sur = cairo_xlib_surface_create(dsp, active_window, DefaultVisual(dsp, DefaultScreen(dsp)), w, h);
-    cairo_surface_write_to_png_stream(sur, buffer_write, NULL);
-    cairo_surface_destroy(sur);
-
-    return true;
+   struct timeval tv;
+   gettimeofday(&tv, 0);
+   return tv.tv_sec*1000000L + tv.tv_usec;
 }
 
 int run()
 {
+    XEvent xevent;
+    long framets = timestamp();
+    long periodts = timestamp();
+    long frames = 0;
+    int fd = ConnectionNumber(dsp);
+
     while (1)
     {
         if (!active_window) {
@@ -112,10 +123,47 @@ int run()
             continue;
         }
 
-        XShmGetImage(dsp, active_window, src->ximage, 0, 0, AllPlanes);
-        processimage(src);
+        while (XPending(dsp))
+        {
+            XNextEvent(dsp, &xevent);
+        }
+
+        getrootwindow();
+
+        long unsigned int _jpegSize = 0;
+        unsigned char* _compressedImage = NULL;
+        unsigned char buffer[src->ximage->width * src->ximage->height * BPP];
+
+        tjhandle _jpegCompressor = tjInitCompress();
+
+        tjCompress2(_jpegCompressor, buffer, src->ximage->width, 0, src->ximage->height, TJPF_BGRA, &_compressedImage, &_jpegSize, TJSAMP_422, 100, TJFLAG_FASTDCT | TJFLAG_PROGRESSIVE);
+        tjDestroy(_jpegCompressor);
+        printf("%d%d", 0xdeafbeef, 0xdaebaaa);
+        fwrite(&src->ximage->width, 2, 1, stdout);
+        fwrite(&src->ximage->height, 2, 1, stdout);
+        fwrite(_compressedImage, 1, _jpegSize, stdout);
+        tjFree(_compressedImage);
 
         XSync(dsp, False);
+
+        int frameus = timestamp() - framets;
+        ++frames;
+        while(frameus < FRAME)
+        {
+            #if defined(__SLEEP__)
+            usleep(FRAME - frameus);
+            #endif
+            frameus = timestamp() - framets;
+        }
+        framets = timestamp();
+
+        int periodus = timestamp() - periodts;
+        if (periodus >= PERIOD)
+        {
+            frames = 0;
+            periodts = framets;
+        }
+
     }
     return true;
 }
@@ -135,8 +183,8 @@ void handle_signal(int sig) {
     int width = attrs.width;
     int height = attrs.height;
 
-    initimage(&_src);
-    createimage(&_src, width, height);
+    initimage(src);
+    createimage(src, width, height);
     active_window = temp_window_id;
     temp_window_id = 0;
 
@@ -145,17 +193,19 @@ void handle_signal(int sig) {
 
 int main(int argc, char * argv[])
 {
-    FILE* pidFile = fopen(".pid", "w");
+    FILE *pidFile = fopen(".pid", "w");
     fprintf(pidFile, "%d", getpid());
     fclose(pidFile);
 
-    src = &_src;
+    dsp = XOpenDisplay(NULL);
+    int screen = XDefaultScreen(dsp);
 
     signal(SIGUSR1, handle_signal);
     XSetErrorHandler(handler);
 
-    dsp = XOpenDisplay(NULL);
+    initimage(src);
     run();
+
     destroyimage(src);
     XCloseDisplay(dsp);
     return 0;
