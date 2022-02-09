@@ -4,6 +4,13 @@ const express = require('express');
 const app = express();
 const https = require('https');
 const { json } = require('body-parser');
+const crypto = require('crypto');
+
+const MAGIC_1 = Buffer.from([ 0x2d, 0x35, 0x35, 0x39, 0x30, 0x33, 0x38, 0x37, 0x33, 0x37, ]) // 0xDEADBEEF
+const MAGIC_2 = Buffer.from([ 0x2d, 0x35, 0x35, 0x38, 0x39, 0x30, 0x37, 0x36, 0x36, 0x35, ]); // 0xDEAFBEEF
+const MAGIC_3 = Buffer.from([ 0x2d, 0x36, 0x32, 0x32, 0x30, 0x38, 0x39, 0x35, 0x35, 0x38, ]); // 0xDAEBAAAA
+const METADATA_BYTE_LENGTH = 6;
+const BYTES_PER_PIXEL = 4;
 
 const server = https.createServer({
   key: fs.readFileSync('./key.pem'),
@@ -13,9 +20,7 @@ const server = https.createServer({
 const { Server } = require('socket.io');
 const Jimp = require('jimp');
 
-global.image = null;
-const fullscreenHeight = 782, defaultHeight = 734;
-let width = 1100, height = defaultHeight;
+const width = 1100, height = 740;
 
 const io = new Server(server, {
   maxHttpBufferSize: 1024 * 8 * 8, // **N kb
@@ -47,7 +52,6 @@ server.listen(15777, () => {
   });
 });
 
-const pngMagic = new Uint8Array([ 0x2d, 0x35, 0x35, 0x38, 0x39, 0x30, 0x37, 0x36, 0x36, 0x35, 0x32, 0x32, 0x39, 0x35, 0x35, 0x34, 0x38, 0x35, 0x38 ]);
 let buffer = Buffer.from('');
 let superMegaCache = null;
 let currentWindow = null;
@@ -83,13 +87,15 @@ const getWindowsList = () => {
         const [, data = ''] = output.match(/_NET_WM_ICON = (.+?)\n/) || [];
         const dataPixels = data.split(',');
 
-        if (!dataPixels)
+        if (!dataPixels) {
+          windows[windowID] = { iconData: '', title };
           return;
+        }
 
         const [ width, height ] = [ dataPixels[0], dataPixels[1] ];
 
         if (!width || !height) {
-          winIDs.splice(index, 1);
+          windows[windowID] = { error: true };
           return;
         }
 
@@ -119,11 +125,11 @@ const getWindowsList = () => {
   });
 };
 
-const handleImage = (image) => {
+const handleImage = (image, w, h) => {
   if (!currentWindow)
     return;
 
-  options.setImage(image, width, height);
+  options.setImage(image, w, h);
 };
 
 io.on('connection', (socket) => {
@@ -134,12 +140,12 @@ io.on('connection', (socket) => {
   });
 
   socket.on('maximize', () => {
-    height = defaultHeight;
+    // height = defaultHeight;
     openWindow();
   });
 
   socket.on('minimize', () => {
-    height = fullscreenHeight;
+    // height = fullscreenHeight;
     openWindow();
   });
 
@@ -164,29 +170,72 @@ io.on('connection', (socket) => {
   });
 });
 
+let smallBuffer = [];
+
+const panic = (realShit = true) => {
+  buffer = Buffer.from('');
+  smallBuffer = [];
+
+  if (realShit) console.log('Real shit is happening!');
+};
+
 process.stdin.on('data', data => {
-  buffer = Buffer.concat([ buffer, data ]);
+  const magicCheck3 = data.indexOf(MAGIC_3) >= 0;
 
-  const index = buffer.indexOf(pngMagic);
-  if (index >= 0 && buffer.indexOf(pngMagic, index + 1) >= 0) {
-    const chunk = buffer.slice(0, buffer.indexOf(pngMagic, index + 1));
-    const imageData = chunk.slice(chunk.indexOf(pngMagic) + pngMagic.length);
-    const image = imageData.slice(4);
-    const hash = image.length;
+  smallBuffer.push(data);
 
-    width = imageData.readInt16LE(0);
-    height = imageData.readInt16LE(2);
-
-    buffer = Buffer.from('');
-
-    if (hash === superMegaCache)
-      return;
-
-    superMegaCache = hash;
-    handleImage(image);
+  if (magicCheck3) {
+    buffer = Buffer.concat(smallBuffer);
+  } else {
+    return;
   }
 
-  if (buffer.length > 512 * 1024) {
+  const magicCheck1 = buffer.indexOf(MAGIC_1) >= 0;
+  const magicCheck2 = buffer.indexOf(MAGIC_2) >= 0;
+
+  if (!magicCheck1 && !magicCheck2 && !magicCheck3) {
+    panic();
+    return;
+  }
+
+  const metadataIndex = buffer.indexOf(MAGIC_1);
+  const imageDataIndex = buffer.indexOf(MAGIC_2);
+  const endIndex = buffer.indexOf(MAGIC_3);
+
+  if (metadataIndex >= 0 && imageDataIndex >= 0 && endIndex >= 0) {
+    const everything = buffer.slice(metadataIndex, endIndex + 1);
+
+    const metadata = everything.slice(MAGIC_1.byteLength, MAGIC_1.byteLength + METADATA_BYTE_LENGTH);
+    const w = metadata.readInt16LE(0);
+    let h = metadata.readInt16LE(2);
+
+    const bytesPerPixel = metadata.readInt16LE(4);
+
+    if (!w || !h || bytesPerPixel !== BYTES_PER_PIXEL) {
+      return panic();
+    }
+
+    let imageData = buffer.slice(imageDataIndex + MAGIC_2.byteLength, endIndex);
+    if (!imageData || imageData.byteLength !== w * h * bytesPerPixel) {
+      return;
+    }
+
+    if (h % 2 === 1) {
+      h += 1;
+      imageData = Buffer.concat([ imageData, Buffer.alloc(w * bytesPerPixel, 0) ]);
+    }
+
+    const finalImage = new Uint8ClampedArray(imageData)
+    handleImage(finalImage, w, h);
+
+    buffer = buffer.slice(endIndex + MAGIC_3.byteLength, buffer.length);
+    smallBuffer = [ buffer ];
     buffer = Buffer.from('');
+  }
+
+  if (buffer.byteLength > 128 * 1024 * 1024) {
+    console.log('Buffer overflow');
+    buffer = Buffer.from('');
+    smallBuffer = [];
   }
 });

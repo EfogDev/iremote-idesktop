@@ -227,15 +227,18 @@
         }
 
         #img {
+            position: relative;
+            top: -2px;
+            left: -1px;
             flex: 0 1 auto;
             transition: margin-top .3s ease-out;
-            height: 735px;
-            width: 1100px;
+            height: 736px;
+            width: 1101px;
         }
 
         #root.maximized #img {
             height: 783px;
-            width: 1100px;
+            width: 1101px;
         }
     </style>
 
@@ -255,6 +258,10 @@
             const { windows } = JSON.parse(data);
             Object.keys(windows).forEach(x11Window => {
                 const currentWindow = windows[x11Window];
+
+                if (!currentWindow.iconData)
+                    return;
+
                 const item = document.createElement('div');
                 item.classList.add('window-icon');
 

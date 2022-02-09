@@ -12,9 +12,10 @@
 #include <sys/time.h>
 #include <turbojpeg.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
-#define FRAME  60000
-#define PERIOD 900000
+#define FRAME  30000
+#define PERIOD 6000000
 #define BPP    4
 
 Display* dsp;
@@ -80,13 +81,14 @@ int createimage(struct shmimage * image, int width, int height)
     image->ximage = XShmCreateImage(dsp, XDefaultVisual(dsp, XDefaultScreen(dsp)),
                         DefaultDepth(dsp, XDefaultScreen(dsp)), ZPixmap, 0,
                         &image->shminfo, 0, 0);
+
     if (!image->ximage)
     {
         destroyimage(image);
         return false;
     }
 
-    image->ximage->data = (char *)image->data;
+    image->ximage->data = (char *) image->data;
     image->ximage->width = width;
     image->ximage->height = height;
 
@@ -130,19 +132,17 @@ int run()
 
         getrootwindow();
 
-        long unsigned int _jpegSize = 0;
-        unsigned char* _compressedImage = NULL;
-        unsigned char buffer[src->ximage->width * src->ximage->height * BPP];
+        int w = src->ximage->width;
+        int h = src->ximage->height;
+        int bpp = BPP;
 
-        tjhandle _jpegCompressor = tjInitCompress();
-
-        tjCompress2(_jpegCompressor, buffer, src->ximage->width, 0, src->ximage->height, TJPF_BGRA, &_compressedImage, &_jpegSize, TJSAMP_422, 100, TJFLAG_FASTDCT | TJFLAG_PROGRESSIVE);
-        tjDestroy(_jpegCompressor);
-        printf("%d%d", 0xdeafbeef, 0xdaebaaa);
-        fwrite(&src->ximage->width, 2, 1, stdout);
-        fwrite(&src->ximage->height, 2, 1, stdout);
-        fwrite(_compressedImage, 1, _jpegSize, stdout);
-        tjFree(_compressedImage);
+        printf("%d", 0xDEADBEEF);
+        fwrite(&w, 2, 1, stdout);
+        fwrite(&h, 2, 1, stdout);
+        fwrite(&bpp, 2, 1, stdout);
+        printf("%d", 0xDEAFBEEF);
+        fwrite(src->ximage->data, w * h * BPP, 1, stdout);
+        printf("%d", 0xDAEBAAAA);
 
         XSync(dsp, False);
 
@@ -193,6 +193,8 @@ void handle_signal(int sig) {
 
 int main(int argc, char * argv[])
 {
+    setvbuf(stdout, NULL, _IONBF, 0);
+
     FILE *pidFile = fopen(".pid", "w");
     fprintf(pidFile, "%d", getpid());
     fclose(pidFile);
